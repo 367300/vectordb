@@ -7,14 +7,14 @@ from app.main import app
 client = TestClient(app)
 
 
-def test_empty_embedding_rejected():
+def test_empty_embedding_rejected(auth_headers):
     """Test that empty embeddings are rejected at DTO level."""
     # Create library and document
-    r = client.post("/libraries/", json={"name": "test-empty"})
+    r = client.post("/libraries/", json={"name": "test-empty"}, headers=auth_headers)
     assert r.status_code == 201
     lib_id = r.json()["id"]
 
-    r = client.post(f"/libraries/{lib_id}/documents", json={"title": "doc"})
+    r = client.post(f"/libraries/{lib_id}/documents", json={"title": "doc"}, headers=auth_headers)
     assert r.status_code == 201
     doc_id = r.json()["id"]
 
@@ -27,6 +27,7 @@ def test_empty_embedding_rejected():
             "embedding": [],  # Empty embedding
             "metadata": {},
         },
+        headers=auth_headers,
     )
     assert r.status_code == 422  # Validation error
     assert "min_length" in str(r.json()) or "at least 1" in str(r.json()).lower()
@@ -35,18 +36,19 @@ def test_empty_embedding_rejected():
     r = client.post(
         f"/libraries/{lib_id}/chunks",
         json={"document_id": doc_id, "text": "test", "metadata": {}},
+        headers=auth_headers,
     )
     assert r.status_code == 422  # Validation error
 
 
-def test_search_wrong_dimension():
+def test_search_wrong_dimension(auth_headers):
     """Test that searching with wrong dimension vectors returns proper error."""
     # Create library with 3D vectors
-    r = client.post("/libraries/", json={"name": "test-dims"})
+    r = client.post("/libraries/", json={"name": "test-dims"}, headers=auth_headers)
     assert r.status_code == 201
     lib_id = r.json()["id"]
 
-    r = client.post(f"/libraries/{lib_id}/documents", json={"title": "doc"})
+    r = client.post(f"/libraries/{lib_id}/documents", json={"title": "doc"}, headers=auth_headers)
     assert r.status_code == 201
     doc_id = r.json()["id"]
 
@@ -59,12 +61,13 @@ def test_search_wrong_dimension():
             "embedding": [1.0, 0.0, 0.0],  # 3D
             "metadata": {},
         },
+        headers=auth_headers,
     )
     assert r.status_code == 201
 
     # Build index
     r = client.put(
-        f"/libraries/{lib_id}/index", json={"algorithm": "linear", "metric": "cosine"}
+        f"/libraries/{lib_id}/index", json={"algorithm": "linear", "metric": "cosine"}, headers=auth_headers
     )
     assert r.status_code == 200
 
@@ -76,6 +79,7 @@ def test_search_wrong_dimension():
             "k": 1,
             "metadata_filters": {},
         },
+        headers=auth_headers,
     )
     assert r.status_code == 200
 
@@ -83,6 +87,7 @@ def test_search_wrong_dimension():
     r = client.post(
         f"/libraries/{lib_id}/chunks/search",
         json={"vector": [1.0, 0.0], "k": 1, "metadata_filters": {}},  # 2D - wrong!
+        headers=auth_headers,
     )
     assert r.status_code == 400  # Bad request
     assert "dimension" in str(r.json()).lower()
@@ -91,43 +96,44 @@ def test_search_wrong_dimension():
     r = client.post(
         f"/libraries/{lib_id}/chunks/search",
         json={"vector": [], "k": 1, "metadata_filters": {}},  # Empty
+        headers=auth_headers,
     )
     assert r.status_code == 422  # Validation error
 
 
-def test_snapshot_delete_then_restore():
+def test_snapshot_delete_then_restore(auth_headers):
     """Test that restoring a deleted snapshot returns 404."""
     # Create a snapshot
-    r = client.post("/admin/snapshots", json={"name": "test-snapshot"})
+    r = client.post("/admin/snapshots", json={"name": "test-snapshot"}, headers=auth_headers)
     assert r.status_code == 201
     snapshot_id = r.json()["id"]
 
     # Verify snapshot exists
-    r = client.get(f"/admin/snapshots/{snapshot_id}")
+    r = client.get(f"/admin/snapshots/{snapshot_id}", headers=auth_headers)
     assert r.status_code == 200
 
     # Delete the snapshot
-    r = client.delete(f"/admin/snapshots/{snapshot_id}")
+    r = client.delete(f"/admin/snapshots/{snapshot_id}", headers=auth_headers)
     assert r.status_code == 204
 
     # Try to restore deleted snapshot - should fail with 404
-    r = client.post(f"/admin/snapshots/{snapshot_id}/restore")
+    r = client.post(f"/admin/snapshots/{snapshot_id}/restore", headers=auth_headers)
     assert r.status_code == 404
     assert "not found" in str(r.json()).lower()
 
     # Try to get deleted snapshot - should also fail
-    r = client.get(f"/admin/snapshots/{snapshot_id}")
+    r = client.get(f"/admin/snapshots/{snapshot_id}", headers=auth_headers)
     assert r.status_code == 404
 
 
-def test_update_chunk_with_empty_embedding():
+def test_update_chunk_with_empty_embedding(auth_headers):
     """Test that updating a chunk with empty embedding is rejected."""
     # Create library and document
-    r = client.post("/libraries/", json={"name": "test-update-empty"})
+    r = client.post("/libraries/", json={"name": "test-update-empty"}, headers=auth_headers)
     assert r.status_code == 201
     lib_id = r.json()["id"]
 
-    r = client.post(f"/libraries/{lib_id}/documents", json={"title": "doc"})
+    r = client.post(f"/libraries/{lib_id}/documents", json={"title": "doc"}, headers=auth_headers)
     assert r.status_code == 201
     doc_id = r.json()["id"]
 
@@ -140,6 +146,7 @@ def test_update_chunk_with_empty_embedding():
             "embedding": [1.0, 0.0, 0.0],
             "metadata": {},
         },
+        headers=auth_headers,
     )
     assert r.status_code == 201
     chunk_id = r.json()["id"]
@@ -148,6 +155,7 @@ def test_update_chunk_with_empty_embedding():
     r = client.patch(
         f"/libraries/{lib_id}/chunks/{chunk_id}",
         json={"embedding": []},  # Empty embedding
+        headers=auth_headers,
     )
     assert r.status_code == 422  # Validation error
 
@@ -155,18 +163,19 @@ def test_update_chunk_with_empty_embedding():
     r = client.patch(
         f"/libraries/{lib_id}/chunks/{chunk_id}",
         json={"embedding": [0.0, 1.0, 0.0]},  # Valid 3D
+        headers=auth_headers,
     )
     assert r.status_code == 200
 
 
-def test_dimension_enforcement_on_second_chunk():
+def test_dimension_enforcement_on_second_chunk(auth_headers):
     """Test that library-level dimension is enforced after first chunk."""
     # Create library
-    r = client.post("/libraries/", json={"name": "test-dim-enforce"})
+    r = client.post("/libraries/", json={"name": "test-dim-enforce"}, headers=auth_headers)
     assert r.status_code == 201
     lib_id = r.json()["id"]
 
-    r = client.post(f"/libraries/{lib_id}/documents", json={"title": "doc"})
+    r = client.post(f"/libraries/{lib_id}/documents", json={"title": "doc"}, headers=auth_headers)
     assert r.status_code == 201
     doc_id = r.json()["id"]
 
@@ -179,6 +188,7 @@ def test_dimension_enforcement_on_second_chunk():
             "embedding": [1.0, 0.0, 0.0],  # 3D
             "metadata": {},
         },
+        headers=auth_headers,
     )
     assert r.status_code == 201
 
@@ -191,6 +201,7 @@ def test_dimension_enforcement_on_second_chunk():
             "embedding": [1.0, 0.0],  # 2D - wrong!
             "metadata": {},
         },
+        headers=auth_headers,
     )
     assert r.status_code == 400  # Bad request
     assert "dimension" in str(r.json()).lower()
@@ -204,5 +215,6 @@ def test_dimension_enforcement_on_second_chunk():
             "embedding": [0.0, 1.0, 0.0],  # 3D - correct
             "metadata": {},
         },
+        headers=auth_headers,
     )
     assert r.status_code == 201

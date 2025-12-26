@@ -10,15 +10,15 @@ def test_health():
     assert r.status_code == 200
 
 
-def test_crud_and_search_flow():
+def test_crud_and_search_flow(auth_headers):
     # create library
-    r = client.post("/libraries/", json={"name": "lib1"})
+    r = client.post("/libraries/", json={"name": "lib1"}, headers=auth_headers)
     assert r.status_code == 201
     lib = r.json()
     lib_id = lib["id"]
 
     # create document
-    r = client.post(f"/libraries/{lib_id}/documents", json={"title": "doc1"})
+    r = client.post(f"/libraries/{lib_id}/documents", json={"title": "doc1"}, headers=auth_headers)
     assert r.status_code == 201
     doc = r.json()
 
@@ -28,17 +28,19 @@ def test_crud_and_search_flow():
     r = client.post(
         f"/libraries/{lib_id}/chunks",
         json={"document_id": doc["id"], "text": "hello world", "embedding": emb1},
+        headers=auth_headers,
     )
     assert r.status_code == 201
     r = client.post(
         f"/libraries/{lib_id}/chunks",
         json={"document_id": doc["id"], "text": "vector db", "embedding": emb2},
+        headers=auth_headers,
     )
     assert r.status_code == 201
 
     # build index
     r = client.put(
-        f"/libraries/{lib_id}/index", json={"algorithm": "linear", "metric": "cosine"}
+        f"/libraries/{lib_id}/index", json={"algorithm": "linear", "metric": "cosine"}, headers=auth_headers
     )
     assert r.status_code == 200
     # verify response returns index info
@@ -49,6 +51,7 @@ def test_crud_and_search_flow():
     r = client.post(
         f"/libraries/{lib_id}/chunks/search",
         json={"vector": [0.0, 1.0, 0.0], "k": 1, "metadata_filters": {}},
+        headers=auth_headers,
     )
     assert r.status_code == 200
     results = r.json()["results"]

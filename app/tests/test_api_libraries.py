@@ -5,11 +5,12 @@ from app.main import app
 client = TestClient(app)
 
 
-def test_libraries_crud_flow():
+def test_libraries_crud_flow(auth_headers):
     # create
     r = client.post(
         "/libraries/",
         json={"name": "lib-crud", "description": "d", "metadata": {"a": "b"}},
+        headers=auth_headers,
     )
     assert r.status_code == 201
     lib = r.json()
@@ -19,12 +20,12 @@ def test_libraries_crud_flow():
     assert lib["metadata"]["a"] == "b"
 
     # list
-    r = client.get("/libraries/")
+    r = client.get("/libraries/", headers=auth_headers)
     assert r.status_code == 200
     assert any(x["id"] == lib_id for x in r.json())
 
     # get
-    r = client.get(f"/libraries/{lib_id}")
+    r = client.get(f"/libraries/{lib_id}", headers=auth_headers)
     assert r.status_code == 200
     assert r.json()["id"] == lib_id
 
@@ -32,6 +33,7 @@ def test_libraries_crud_flow():
     r = client.patch(
         f"/libraries/{lib_id}",
         json={"name": "lib-upd", "description": "dx", "metadata": {"k": "v"}},
+        headers=auth_headers,
     )
     assert r.status_code == 200
     data = r.json()
@@ -40,16 +42,16 @@ def test_libraries_crud_flow():
     assert data["metadata"]["k"] == "v"
 
     # delete
-    r = client.delete(f"/libraries/{lib_id}")
+    r = client.delete(f"/libraries/{lib_id}", headers=auth_headers)
     assert r.status_code == 204
 
     # get after delete -> 404
-    r = client.get(f"/libraries/{lib_id}")
+    r = client.get(f"/libraries/{lib_id}", headers=auth_headers)
     assert r.status_code == 404
 
 
-def test_libraries_update_and_get_not_found():
-    r = client.patch("/libraries/does-not-exist", json={"name": "x"})
+def test_libraries_update_and_get_not_found(auth_headers):
+    r = client.patch("/libraries/does-not-exist", json={"name": "x"}, headers=auth_headers)
     assert r.status_code == 404
-    r = client.get("/libraries/does-not-exist")
+    r = client.get("/libraries/does-not-exist", headers=auth_headers)
     assert r.status_code == 404

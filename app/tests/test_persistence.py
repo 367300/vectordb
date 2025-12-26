@@ -9,12 +9,12 @@ from app.main import app
 client = TestClient(app)
 
 
-def test_persistence_save_load_and_search_restored(tmp_path: Path) -> None:
-    r = client.post("/libraries/", json={"name": "lib-persist"})
+def test_persistence_save_load_and_search_restored(tmp_path: Path, auth_headers) -> None:
+    r = client.post("/libraries/", json={"name": "lib-persist"}, headers=auth_headers)
     assert r.status_code == 201
     lib_id = r.json()["id"]
 
-    r = client.post(f"/libraries/{lib_id}/documents", json={"title": "doc"})
+    r = client.post(f"/libraries/{lib_id}/documents", json={"title": "doc"}, headers=auth_headers)
     assert r.status_code == 201
     doc_id = r.json()["id"]
 
@@ -23,17 +23,20 @@ def test_persistence_save_load_and_search_restored(tmp_path: Path) -> None:
     r = client.post(
         f"/libraries/{lib_id}/chunks",
         json={"document_id": doc_id, "text": "a", "embedding": v1},
+        headers=auth_headers,
     )
     assert r.status_code == 201
     r = client.post(
         f"/libraries/{lib_id}/chunks",
         json={"document_id": doc_id, "text": "b", "embedding": v2},
+        headers=auth_headers,
     )
     assert r.status_code == 201
 
     r = client.put(
         f"/libraries/{lib_id}/index",
         json={"algorithm": "kdtree", "metric": "euclidean"},
+        headers=auth_headers,
     )
     assert r.status_code == 200
     info = r.json()
@@ -43,13 +46,14 @@ def test_persistence_save_load_and_search_restored(tmp_path: Path) -> None:
     r = client.post(
         f"/libraries/{lib_id}/chunks/search",
         json={"vector": v1, "k": 1, "metadata_filters": {}},
+        headers=auth_headers,
     )
     assert r.status_code == 200
     before = r.json()["results"][0]["chunk_id"]
 
     snap_path = tmp_path / "snapshot.json"
 
-    r = client.post("/admin/snapshots")
+    r = client.post("/admin/snapshots", headers=auth_headers)
     assert r.status_code == 201  # RESTful: POST creates resource, returns 201
     snapshot_data = r.json()
     snapshot_id = snapshot_data["id"]
@@ -57,12 +61,13 @@ def test_persistence_save_load_and_search_restored(tmp_path: Path) -> None:
     snap_path.write_text(saved_path.read_text())
 
     # Use the new RESTful restore endpoint
-    r = client.post(f"/admin/snapshots/{snapshot_id}/restore")
+    r = client.post(f"/admin/snapshots/{snapshot_id}/restore", headers=auth_headers)
     assert r.status_code == 200  # OK for synchronous operation
 
     r = client.post(
         f"/libraries/{lib_id}/chunks/search",
         json={"vector": v1, "k": 1, "metadata_filters": {}},
+        headers=auth_headers,
     )
     assert r.status_code == 200
     after = r.json()["results"][0]["chunk_id"]
@@ -71,6 +76,7 @@ def test_persistence_save_load_and_search_restored(tmp_path: Path) -> None:
     r = client.put(
         f"/libraries/{lib_id}/index",
         json={"algorithm": "kdtree", "metric": "euclidean"},
+        headers=auth_headers,
     )
     assert r.status_code == 200
     info2 = r.json()
