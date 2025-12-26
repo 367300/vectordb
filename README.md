@@ -220,6 +220,43 @@ make run
 uvicorn app.main:app --reload --port 8000
 ```
 
+### JWT Authentication Setup
+
+**⚠️ Important**: All API endpoints (except `/health`) require JWT authentication. You must configure a JWT secret key before making requests.
+
+1. **Create `.env` file** in the project root:
+
+```bash
+# .env
+JWT_SECRET_KEY=your-secret-key-here-minimum-32-characters
+```
+
+2. **Generate a JWT token**:
+
+```bash
+python generate_token.py
+```
+
+This will output a token that you can use for API requests.
+
+3. **Use the token in requests**:
+
+```bash
+# Using curl
+curl -H "Authorization: Bearer <your-token>" http://localhost:8000/libraries/
+
+# Or in Python SDK (if updated to support auth)
+client = VectorDBClient(
+    base_url="http://localhost:8000",
+    token="<your-token>"
+)
+```
+
+**Note**: If `JWT_SECRET_KEY` is not set in `.env` or environment variables, the service will generate a random key on startup. This means:
+- ✅ The service will start successfully
+- ❌ You won't be able to access any endpoints (except `/health`) because you won't know the randomly generated key
+- 💡 Always set `JWT_SECRET_KEY` explicitly for development and production
+
 ### Quick Example
 
 ```python
@@ -269,6 +306,7 @@ Environment variables for customization:
 | ---------------- | ------- | -------------------------------------- |
 | `ENV`            | `local` | Environment (local/staging/production) |
 | `DATA_DIR`       | `data`  | Directory for snapshots                |
+| `JWT_SECRET_KEY` | *random*| JWT secret key for authentication (required for API access) |
 | `COHERE_API_KEY` | -       | API key for embeddings (optional)      |
 
 ## Production Deployment
@@ -356,9 +394,15 @@ The default in-memory repository is **per-process** and not suitable for multi-w
 
 ### Example API Calls
 
+**Note**: All endpoints require JWT authentication. Include the token in the `Authorization` header:
+```bash
+-H "Authorization: Bearer <your-jwt-token>"
+```
+
 ```bash
 # Create a library
 curl -X POST http://localhost:8000/libraries/ \
+  -H "Authorization: Bearer <your-jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "product-embeddings",
@@ -368,6 +412,7 @@ curl -X POST http://localhost:8000/libraries/ \
 
 # Create a document
 curl -X POST http://localhost:8000/libraries/{library_id}/documents \
+  -H "Authorization: Bearer <your-jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{
     "title": "Product Catalog",
@@ -377,6 +422,7 @@ curl -X POST http://localhost:8000/libraries/{library_id}/documents \
 
 # Create a chunk with embedding
 curl -X POST http://localhost:8000/libraries/{library_id}/chunks \
+  -H "Authorization: Bearer <your-jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{
     "document_id": "{document_id}",
@@ -387,6 +433,7 @@ curl -X POST http://localhost:8000/libraries/{library_id}/chunks \
 
 # Build an index (create/replace)
 curl -X PUT http://localhost:8000/libraries/{library_id}/index \
+  -H "Authorization: Bearer <your-jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{
     "algorithm": "kdtree",
@@ -395,6 +442,7 @@ curl -X PUT http://localhost:8000/libraries/{library_id}/index \
 
 # Search for similar vectors
 curl -X POST http://localhost:8000/libraries/{library_id}/chunks/search \
+  -H "Authorization: Bearer <your-jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{
     "vector": [0.1, 0.2, 0.3, 0.4],
@@ -404,6 +452,7 @@ curl -X POST http://localhost:8000/libraries/{library_id}/chunks/search \
 
 # Generate embeddings (requires COHERE_API_KEY)
 curl -X POST http://localhost:8000/embeddings \
+  -H "Authorization: Bearer <your-jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{
     "text": "High-quality wireless headphones with noise cancellation"
@@ -411,16 +460,19 @@ curl -X POST http://localhost:8000/embeddings \
 
 # Create a snapshot
 curl -X POST http://localhost:8000/admin/snapshots \
+  -H "Authorization: Bearer <your-jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "backup_before_migration"
   }'
 
 # List all snapshots
-curl -X GET http://localhost:8000/admin/snapshots
+curl -X GET http://localhost:8000/admin/snapshots \
+  -H "Authorization: Bearer <your-jwt-token>"
 
 # Restore from snapshot (synchronous)
-curl -X POST http://localhost:8000/admin/snapshots/{snapshot_id}/restore
+curl -X POST http://localhost:8000/admin/snapshots/{snapshot_id}/restore \
+  -H "Authorization: Bearer <your-jwt-token>"
 ```
 
 # Python SDK
@@ -430,11 +482,38 @@ curl -X POST http://localhost:8000/admin/snapshots/{snapshot_id}/restore
 ### Complete Example
 
 ```python
+import os
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
+from jose import jwt
 from sdk.client import VectorDBClient
 
+# Загружаем переменные из .env файла
+load_dotenv()
+
+def generate_token(expires_days: int = 30) -> str:
+    """Генерирует JWT токен.
+    
+    Args:
+        expires_days: Количество дней до истечения токена
+        
+    Returns:
+        str: JWT токен
+    """
+    secret_key = os.getenv("JWT_SECRET_KEY", "default-secret-key-change-in-production")
+    payload = {
+        "sub": "test",
+        "admin": True,
+        "exp": datetime.utcnow() + timedelta(days=expires_days),
+    }
+    return jwt.encode(payload, secret_key, algorithm="HS256")
+
 class VectorDBManager:
-    def __init__(self, base_url="http://localhost:8000"):
-        self.client = VectorDBClient(base_url=base_url)
+    def __init__(self, base_url="http://localhost:8000", token: str = None):
+        # Генерируем токен, если не передан
+        if token is None:
+            token = generate_token()
+        self.client = VectorDBClient(base_url=base_url, token=token)
 
     def get_library_id(self, name: str) -> str:
         library = self.get_library_by_name(name)

@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 
 from app.api.routers import admin, embed, libraries
 from app.core import configure_logging
+from app.core.auth import verify_token
 
 
 @asynccontextmanager
@@ -27,9 +28,24 @@ def create_app() -> FastAPI:
     def health() -> JSONResponse:
         return JSONResponse({"status": "ok"})
 
-    app.include_router(libraries.router, prefix="/libraries", tags=["libraries"])
-    app.include_router(admin.router, prefix="/admin", tags=["admin"])
-    app.include_router(embed.router, prefix="/embeddings", tags=["embeddings"])
+    app.include_router(
+        libraries.router,
+        prefix="/libraries",
+        tags=["libraries"],
+        dependencies=[Depends(verify_token)],
+    )
+    app.include_router(
+        admin.router,
+        prefix="/admin",
+        tags=["admin"],
+        dependencies=[Depends(verify_token)],
+    )
+    app.include_router(
+        embed.router,
+        prefix="/embeddings",
+        tags=["embeddings"],
+        dependencies=[Depends(verify_token)],
+    )
 
     return app
 

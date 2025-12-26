@@ -7,10 +7,14 @@ import requests
 
 class VectorDBClient:
     def __init__(
-        self, base_url: str = "http://127.0.0.1:8000", timeout: int = 30
+        self,
+        base_url: str = "http://127.0.0.1:8000",
+        timeout: int = 30,
+        token: Optional[str] = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.token = token
 
     def _request(
         self,
@@ -22,8 +26,14 @@ class VectorDBClient:
         headers: Optional[Dict[str, str]] = None,
     ) -> Any:
         url = f"{self.base_url}{path}"
+        
+        # Добавляем JWT токен в заголовки, если он установлен
+        request_headers = headers.copy() if headers else {}
+        if self.token:
+            request_headers["Authorization"] = f"Bearer {self.token}"
+        
         r = requests.request(
-            method, url, json=json, params=params, timeout=self.timeout, headers=headers
+            method, url, json=json, params=params, timeout=self.timeout, headers=request_headers
         )
         r.raise_for_status()
         if r.content and r.headers.get("Content-Type", "").startswith(

@@ -6,7 +6,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
+
 from .constants import DistanceMetric, IndexAlgorithm
+
+# Загружаем переменные из .env файла
+load_dotenv()
 
 
 @dataclass
@@ -19,6 +24,11 @@ class Settings:
     )
     cohere_api_key: Optional[str] = field(
         default_factory=lambda: os.getenv("COHERE_API_KEY")
+    )
+    # WARNING: Set your secret key either in the environment variable or in the .env file,
+    # otherwise it will be randomly generated and you will not be able to access the service!
+    jwt_secret_key: str = field(
+        default_factory=lambda: os.getenv("JWT_SECRET_KEY") or os.urandom(32).hex()
     )
     default_metric: str = field(
         default_factory=lambda: os.getenv("DEFAULT_METRIC", DistanceMetric.COSINE.value)
