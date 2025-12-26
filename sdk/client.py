@@ -220,3 +220,12 @@ class VectorDBClient:
             json=payload,
             headers={"Accept": "application/json"},
         )
+
+    def embed_local(self, text: str) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"text": text, "local": True}
+        return self._request(
+            "POST",
+            "/embeddings",
+            json=payload,
+            headers={"Accept": "application/json"},
+        )

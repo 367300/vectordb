@@ -436,6 +436,17 @@ class VectorDBManager:
     def __init__(self, base_url="http://localhost:8000"):
         self.client = VectorDBClient(base_url=base_url)
 
+    def get_library_id(self, name: str) -> str:
+        library = self.get_library_by_name(name)
+        return library["id"]
+
+    def get_library_by_name(self, name: str) -> str:
+        libraries = self.client.list_libraries()
+        for library in libraries:
+            if library["name"] == name:
+                return library
+        raise ValueError(f"Library {name} not found")
+
     def setup_library(self, name: str) -> str:
         """Create and configure a new library"""
         library = self.client.create_library(
@@ -466,6 +477,10 @@ class VectorDBManager:
 
         return chunks
 
+    def embed_local(self, texts: list) -> list:
+        """Embed text using local russian BERT model"""
+        return [self.client.embed_local(text) for text in texts]
+
     def similarity_search(self, library_id: str, query_vector: list, k: int = 5):
         """Perform similarity search"""
         # Build index if needed
@@ -483,15 +498,20 @@ class VectorDBManager:
 # Usage
 manager = VectorDBManager()
 lib_id = manager.setup_library("demo")
+# lib_id = manager.get_library_id("demo") # -> lib_id by name lib
 
-vectors = [[0.1, 0.2, 0.3], [0.2, 0.3, 0.4], [0.3, 0.4, 0.5]]
-texts = ["Document 1", "Document 2", "Document 3"]
+# texts = ["Document 1", "Document 2", "Document 3"] # count full documents
+# vectors = [[0.1, 0.2, 0.3], [0.2, 0.3, 0.4], [0.3, 0.4, 0.5]]
+
+texts = ["поешь этих мягких французских булок да выпей чаю", "ci/cd пайплайн какие есть плюсы", "обеспечение качества в devops"]
+vectors = [manager.client.embed_local(text)["embedding"] for text in texts]
 
 # Add vectors
 manager.add_vectors(lib_id, vectors, texts)
 
 # Search
-query = [0.15, 0.25, 0.35]
+# query = [0.15, 0.25, 0.35]
+query = manager.embed_local("ci cd пайплайн")[0]["embedding"]
 results = manager.similarity_search(lib_id, query, k=2)
 print(f"Found {len(results['results'])} similar vectors")
 ```
@@ -558,6 +578,49 @@ vectordb/
 ├── sdk/                # Python client library
 ├── scripts/            # Utility scripts
 └── postman/            # API collection
+```
+
+### .vscode/launch.json for debug
+
+```json
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Debug Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Gunicorn: Debug Server",
+            "type": "python",
+            "request": "launch",
+            "module": "gunicorn",
+            "args": [
+                "app.main:app",
+                "--workers",
+                "1",
+                "--bind",
+                "0.0.0.0:8000",
+                "--worker-class",
+                "uvicorn.workers.UvicornWorker",
+                "--timeout",
+                "120"
+            ],
+            "jinja": true,
+            "justMyCode": false,
+            "console": "integratedTerminal",
+            "env": {
+                "ENV": "development",
+                "LOG_LEVEL": "DEBUG"
+            },
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
 ```
 
 ## Notes

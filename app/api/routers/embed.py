@@ -27,9 +27,14 @@ log = logging.getLogger(__name__)
 # Global connection pool for better performance
 _http_client: Optional[httpx.AsyncClient] = None
 
+# Global BERT model and tokenizer (lazy loaded)
+_bert_model: Optional[Any] = None
+_bert_tokenizer: Optional[Any] = None
+
 
 class EmbedText(BaseModel):
     text: str = Field(..., min_length=1, max_length=10000, description="Text to embed")
+    local: bool = Field(default=False, description="Use local BERT model instead of Cohere")
 
 
 class EmbeddingResponse(BaseModel):
@@ -61,6 +66,52 @@ async def close_http_client() -> None:
     if _http_client:
         await _http_client.aclose()
         _http_client = None
+
+
+def get_bert_model():
+    """Get or initialize the global BERT model and tokenizer.
+    
+    Returns:
+        tuple: (model, tokenizer)
+    """
+    global _bert_model, _bert_tokenizer
+    if _bert_model is None or _bert_tokenizer is None:
+        try:
+            import torch
+            from transformers import AutoModel, AutoTokenizer
+            
+            model_name = "cointegrated/rubert-tiny"
+            _bert_tokenizer = AutoTokenizer.from_pretrained(model_name)
+            _bert_model = AutoModel.from_pretrained(model_name)
+            # model.cuda()  # uncomment if you have a GPU
+            log.info(f"Initialized BERT model: {model_name}")
+        except ImportError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="BERT model dependencies not installed (torch, transformers)",
+            )
+    return _bert_model, _bert_tokenizer
+
+
+def embed_bert_cls(text: str, model: Any, tokenizer: Any) -> list[float]:
+    """Generate embedding using BERT model.
+    
+    Args:
+        text: Text to embed
+        model: BERT model instance
+        tokenizer: BERT tokenizer instance
+        
+    Returns:
+        list[float]: Normalized embedding vector
+    """
+    import torch
+    
+    t = tokenizer(text, padding=True, truncation=True, return_tensors='pt')
+    with torch.no_grad():
+        model_output = model(**{k: v.to(model.device) for k, v in t.items()})
+    embeddings = model_output.last_hidden_state[:, 0, :]
+    embeddings = torch.nn.functional.normalize(embeddings)
+    return embeddings[0].cpu().numpy().tolist()
 
 
 async def call_cohere_with_retry(
@@ -139,15 +190,15 @@ async def call_cohere_with_retry(
 
 @router.post(
     "",
-    summary="Create an embedding using Cohere v2",
+    summary="Create an embedding using Cohere v2 or local BERT model",
     response_model=EmbeddingResponse,
     response_model_exclude_unset=True,
 )
 async def embed_with_cohere(body: EmbedText) -> dict[str, list[float]]:
-    """Generate text embedding using Cohere API.
+    """Generate text embedding using Cohere API or local BERT model.
 
     Args:
-        body: Text to embed
+        body: Text to embed and optional local flag
 
     Returns:
         Dictionary with embedding vector
@@ -155,6 +206,22 @@ async def embed_with_cohere(body: EmbedText) -> dict[str, list[float]]:
     Raises:
         HTTPException: If API key missing or API call fails
     """
+    # Use local BERT model if requested
+    if body.local:
+        try:
+            model, tokenizer = get_bert_model()
+            vector = embed_bert_cls(body.text, model, tokenizer)
+            return {"embedding": vector}
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.error(f"Error generating BERT embedding: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to generate local embedding: {str(e)}",
+            )
+
+    # Use Cohere API (default behavior)
     api_key = settings.cohere_api_key
     if not api_key:
         raise HTTPException(
