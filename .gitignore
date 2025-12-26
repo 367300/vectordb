@@ -118,5 +118,5 @@ cython_debug/
 ###############################################
 # Project-specific
 ###############################################
-data/snapshot.json
+data/snapshot_*.json
 .DS_Store
