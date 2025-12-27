@@ -229,6 +229,7 @@ uvicorn app.main:app --reload --port 8000
 ```bash
 # .env
 JWT_SECRET_KEY=your-secret-key-here-minimum-32-characters
+ENCRYPTION_KEY=<your-encryption-key-for-defend-api>
 ```
 
 2. **Generate a JWT token**:
@@ -237,18 +238,24 @@ JWT_SECRET_KEY=your-secret-key-here-minimum-32-characters
 python generate_token.py
 ```
 
+3. **[OPTIONAL] Adding to .env your encryption jwt token (when using the sdk)**
+
+```bash
+ENCRYPTION_TOKEN=AAAAABpT2vAuOCwlixjwdV9FeWLcHanIwbdmAvTlRTRCIKI5Gfz4jclnFQovWpqaV...
+```
+
 This will output a token that you can use for API requests.
 
-3. **Use the token in requests**:
+4. **Use the token in requests**:
 
 ```bash
 # Using curl
-curl -H "Authorization: Bearer <your-token>" http://localhost:8000/libraries/
+curl -H "Authorization: Bearer <your-encryption-jwt-token>" http://localhost:8000/libraries/
 
 # Or in Python SDK (if updated to support auth)
 client = VectorDBClient(
     base_url="http://localhost:8000",
-    token="<your-token>"
+    token="<your-encryption-jwt-token>"
 )
 ```
 
