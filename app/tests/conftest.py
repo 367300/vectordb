@@ -7,24 +7,28 @@ import pytest
 from dotenv import load_dotenv
 from jose import jwt
 
+from app.core.encryption import encrypt_token
+
 # Загружаем переменные из .env файла
 load_dotenv()
 
 
 @pytest.fixture
 def jwt_token() -> str:
-    """Генерирует JWT токен для тестов.
+    """Генерирует зашифрованный JWT токен для тестов.
     
     Returns:
-        str: JWT токен
+        str: Зашифрованный JWT токен
     """
     secret_key = os.getenv("JWT_SECRET_KEY", "test-secret-key-for-pytest")
+    encryption_key = os.getenv("ENCRYPTION_KEY", secret_key)
     payload = {
         "sub": "test",
         "admin": True,
         "exp": datetime.utcnow() + timedelta(days=1),
     }
-    return jwt.encode(payload, secret_key, algorithm="HS256")
+    jwt_token = jwt.encode(payload, secret_key, algorithm="HS256")
+    return encrypt_token(jwt_token, encryption_key)
 
 
 @pytest.fixture

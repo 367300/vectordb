@@ -9,3 +9,4 @@ sentencepiece==0.2.1
 requests==2.32.5
 python-jose[cryptography]==3.5.0
 python-dotenv==1.2.1
+cryptography==46.0.3

@@ -30,6 +30,10 @@ class Settings:
     jwt_secret_key: str = field(
         default_factory=lambda: os.getenv("JWT_SECRET_KEY") or os.urandom(32).hex()
     )
+    # Ключ для шифрования токенов перед передачей пользователю
+    encryption_key: str = field(
+        default_factory=lambda: os.getenv("ENCRYPTION_KEY") or os.getenv("JWT_SECRET_KEY") or os.urandom(32).hex()
+    )
     default_metric: str = field(
         default_factory=lambda: os.getenv("DEFAULT_METRIC", DistanceMetric.COSINE.value)
     )

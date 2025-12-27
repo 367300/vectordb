@@ -482,37 +482,40 @@ curl -X POST http://localhost:8000/admin/snapshots/{snapshot_id}/restore \
 ### Complete Example
 
 ```python
+"""
+Пример использования VectorDB SDK с зашифрованными JWT токенами.
+
+Структура данных в VectorDB:
+- Library (библиотека) - верхний уровень, содержит коллекцию документов
+- Document (документ) - имеет title (название) и description, принадлежит Library
+- Chunk (чанк) - имеет text (текстовое содержимое для поиска) и embedding (вектор), 
+  принадлежит Document. Поиск производится именно по чанкам.
+
+Важно понимать:
+- Document.title - это НАЗВАНИЕ документа (например, "Статья о CI/CD")
+- Chunk.text - это СОДЕРЖИМОЕ текста для поиска (например, "ci/cd пайплайн какие есть плюсы")
+- Один документ может содержать несколько чанков с разным содержимым
+"""
+
 import os
-from datetime import datetime, timedelta
 from dotenv import load_dotenv
-from jose import jwt
 from sdk.client import VectorDBClient
 
 # Загружаем переменные из .env файла
 load_dotenv()
 
-def generate_token(expires_days: int = 30) -> str:
-    """Генерирует JWT токен.
-    
-    Args:
-        expires_days: Количество дней до истечения токена
-        
-    Returns:
-        str: JWT токен
-    """
-    secret_key = os.getenv("JWT_SECRET_KEY", "default-secret-key-change-in-production")
-    payload = {
-        "sub": "test",
-        "admin": True,
-        "exp": datetime.utcnow() + timedelta(days=expires_days),
-    }
-    return jwt.encode(payload, secret_key, algorithm="HS256")
-
 class VectorDBManager:
-    def __init__(self, base_url="http://localhost:8000", token: str = None):
-        # Генерируем токен, если не передан
-        if token is None:
-            token = generate_token()
+    def __init__(self, token: str, base_url="http://localhost:8000"):
+        """
+        Инициализация менеджера VectorDB.
+        
+        Args:
+            base_url: URL API сервера
+            token: Зашифрованный JWT токен. Если не передан, генерируется автоматически.
+                   Токен должен быть зашифрованным (используйте generate_token.py для генерации)
+        """
+        
+        self.token = token
         self.client = VectorDBClient(base_url=base_url, token=token)
 
     def get_library_id(self, name: str) -> str:
@@ -535,25 +538,79 @@ class VectorDBManager:
         )
         return library["id"]
 
-    def add_vectors(self, library_id: str, vectors: list, texts: list):
-        """Add multiple vectors with text"""
+    def add_vectors(self, library_id: str, vectors: list, texts: list, document_title: str = "Batch Import"):
+        """
+        Добавляет векторы и тексты как чанки в один документ.
+        
+        Важно: 
+        - texts содержит СОДЕРЖИМОЕ текста для чанков (chunk.text), а не названия документов
+        - Все тексты добавляются как чанки в один документ с указанным title
+        - Поиск производится по chunk.text (содержимое), а не по document.title (название)
+        
+        Args:
+            library_id: ID библиотеки
+            vectors: Список векторов (embeddings) для каждого текста
+            texts: Список текстового содержимого для чанков (chunk.text)
+            document_title: Название документа (document.title). 
+                           Все чанки будут принадлежать этому документу
+        """
+        # Создаем документ с указанным названием (title)
+        # title - это НАЗВАНИЕ документа, не содержимое текста
         doc = self.client.create_document(
             library_id,
-            title="Batch Import",
+            title=document_title,  # Название документа (например, "Статья о DevOps")
             metadata={"type": "bulk"}
         )
 
         chunks = []
+        # Для каждой пары (вектор, текст) создаем чанк
+        # text здесь - это СОДЕРЖИМОЕ для поиска (chunk.text)
         for vector, text in zip(vectors, texts):
             chunk = self.client.create_chunk(
                 library_id,
-                doc["id"],
-                text=text,
+                doc["id"],  # Все чанки принадлежат одному документу
+                text=text,  # Содержимое текста для поиска (chunk.text)
                 embedding=vector.tolist() if hasattr(vector, 'tolist') else vector,
                 metadata={"source": "batch"}
             )
             chunks.append(chunk)
 
+        return chunks
+    
+    def add_vectors_separate_documents(self, library_id: str, document_titles: list, vectors: list, texts: list):
+        """
+        Добавляет векторы и тексты, создавая отдельный документ для каждой пары.
+        
+        Этот метод полезен, когда каждому тексту нужно присвоить отдельное название документа.
+        
+        Args:
+            library_id: ID библиотеки
+            document_titles: Список названий документов (document.title)
+            vectors: Список векторов для каждого текста
+            texts: Список текстового содержимого для чанков (chunk.text)
+        """
+        if len(document_titles) != len(vectors) or len(vectors) != len(texts):
+            raise ValueError("Количество названий документов, векторов и текстов должно совпадать")
+        
+        chunks = []
+        for title, vector, text in zip(document_titles, vectors, texts):
+            # Создаем отдельный документ для каждого текста
+            doc = self.client.create_document(
+                library_id,
+                title=title,  # Название документа
+                metadata={"type": "individual"}
+            )
+            
+            # Создаем один чанк в этом документе
+            chunk = self.client.create_chunk(
+                library_id,
+                doc["id"],
+                text=text,  # Содержимое текста для поиска
+                embedding=vector.tolist() if hasattr(vector, 'tolist') else vector,
+                metadata={"source": "individual"}
+            )
+            chunks.append(chunk)
+        
         return chunks
 
     def embed_local(self, texts: list) -> list:
@@ -574,25 +631,111 @@ class VectorDBManager:
 
         return results
 
-# Usage
-manager = VectorDBManager()
-lib_id = manager.setup_library("demo")
-# lib_id = manager.get_library_id("demo") # -> lib_id by name lib
+# ============================================================================
+# ИСПОЛЬЗОВАНИЕ С ЗАШИФРОВАННЫМИ ТОКЕНАМИ
+# ============================================================================
+token = os.getenv("ENCRYPTION_TOKEN", None)
+if token is None:
+    raise ValueError("ENCRYPTION_TOKEN is not set")
 
-# texts = ["Document 1", "Document 2", "Document 3"] # count full documents
-# vectors = [[0.1, 0.2, 0.3], [0.2, 0.3, 0.4], [0.3, 0.4, 0.5]]
+manager = VectorDBManager(token=token)
 
-texts = ["поешь этих мягких французских булок да выпей чаю", "ci/cd пайплайн какие есть плюсы", "обеспечение качества в devops"]
+# ============================================================================
+# СОЗДАНИЕ БИБЛИОТЕКИ
+# ============================================================================
+
+# Создаем новую библиотеку или получаем существующую
+# Важно: наименование библиотеки может быть не уникальным по условию работы ядра
+# Для уникальности наименований можно использовать верхнеуровневые конструкции
+# такие как эта
+lib_name = "demo"
+try:
+    lib_id = manager.get_library_id(lib_name)
+except ValueError:
+    lib_id = manager.setup_library(lib_name)
+
+# ============================================================================
+# ВАРИАНТ 1: Добавление векторов в один документ
+# ============================================================================
+
+# ВАЖНО: texts содержит СОДЕРЖИМОЕ текста для чанков (chunk.text), 
+# а не названия документов. Это текст, по которому будет производиться поиск.
+
+# Пример: содержимое текстов для чанков (это то, что будет искаться)
+# Важно понимать, что это чанки ОДНОГО документа, если будет найден хотя бы один из этихчанков,
+# то будет возвращен весь этот документ, даже если кажется, что он не соответствует запросу
+texts = [
+    "поешь этих мягких французских булок да выпей чаю",  # chunk.text - содержимое
+    "ci/cd пайплайн какие есть плюсы",                    # chunk.text - содержимое
+    "обеспечение качества в devops"                       # chunk.text - содержимое
+]
+
+# Генерируем векторы (embeddings) для каждого текста
 vectors = [manager.client.embed_local(text)["embedding"] for text in texts]
 
-# Add vectors
-manager.add_vectors(lib_id, vectors, texts)
+# Добавляем все векторы как чанки в один документ
+# Все чанки будут принадлежать документу с названием "Batch Import"
+# Поиск будет производиться по chunk.text (содержимое текста)
+chunks = manager.add_vectors(
+    lib_id, 
+    vectors, 
+    texts,
+    document_title="Коллекция текстов о разработке"  # document.title - название документа
+)
 
-# Search
-# query = [0.15, 0.25, 0.35]
-query = manager.embed_local("ci cd пайплайн")[0]["embedding"]
-results = manager.similarity_search(lib_id, query, k=2)
-print(f"Found {len(results['results'])} similar vectors")
+print(f"Добавлено {len(chunks)} чанков в документ")
+
+# ============================================================================
+# ВАРИАНТ 2: Добавление векторов в отдельные документы
+# ============================================================================
+
+# Если нужно создать отдельный документ для каждого текста:
+# document_titles = ["Документ о CI/CD", "Документ о DevOps", "Документ о качестве"]
+# chunks_separate = manager.add_vectors_separate_documents(
+#     lib_id,
+#     document_titles,  # Названия документов (document.title)
+#     vectors,          # Векторы для каждого текста
+#     texts             # Содержимое текстов для чанков (chunk.text)
+# )
+
+# ============================================================================
+# ПОИСК ПО СХОДСТВУ
+# ============================================================================
+
+# Поиск производится по чанкам (chunks), а не по документам
+# Результаты поиска содержат chunk.text (содержимое), chunk.document_id и другие поля
+
+# Генерируем вектор для поискового запроса
+query_text = "ci cd пайплайн"
+query_vector = manager.embed_local(query_text)[0]["embedding"]
+
+# Или используем готовый вектор:
+# query_vector = [0.15, 0.25, 0.35, ...]
+
+# Выполняем поиск (автоматически строит индекс, если его нет)
+results = manager.similarity_search(lib_id, query_vector, k=2)
+
+print(f"\nНайдено {len(results['results'])} похожих чанков:")
+for i, result in enumerate(results['results'], 1):
+    print(f"\n{i}. Чанк ID: {result['chunk_id']}")
+    print(f"   Документ ID: {result['document_id']}")
+    print(f"   Текст (chunk.text): {result['text']}")  # Содержимое текста чанка
+    print(f"   Схожесть (score): {result['score']}")
+
+# ============================================================================
+# КОММЕНТИРОВАННЫЙ ПРИМЕР С РУЧНЫМИ ВЕКТОРАМИ
+# ============================================================================
+
+# Пример с заранее подготовленными векторами (без использования embed_local):
+# texts = ["Document 1", "Document 2", "Document 3"]  # Содержимое для чанков
+# Важно: при добавлении векторов вручную, необходимо учитывать существующую размерность векторов в библиотеке
+# Иначе будет ошибка 400 bad request при попытке добавить новый вектор с другой размерностью
+# vectors = [[0.1, 0.2, 0.3], [0.2, 0.3, 0.4], [0.3, 0.4, 0.5]]
+# manager.add_vectors(lib_id, vectors, texts, document_title="Ручные векторы")
+
+# Поиск с готовым вектором:
+# query_vector = [0.15, 0.25, 0.35]
+# results = manager.similarity_search(lib_id, query_vector, k=2)
 ```
 
 # Indexing Algorithms
