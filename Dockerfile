@@ -62,6 +62,13 @@ COPY app ./app
 # Data directory (mounted via volume in compose)
 RUN mkdir -p /data && chown -R app:app /data
 
+# Create cache directory for Hugging Face models (BERT embeddings)
+# Используем /app/.cache, так как /app не монтируется как volume
+RUN mkdir -p /app/.cache/huggingface && chown -R app:app /app/.cache
+
+# Set Hugging Face cache directory environment variable
+ENV HF_HOME=/app/.cache/huggingface
+
 USER app
 
 EXPOSE 8000

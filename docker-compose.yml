@@ -14,8 +14,11 @@ services:
       - DEFAULT_INDEX=${DEFAULT_INDEX:-linear}
       - COHERE_API_KEY=${COHERE_API_KEY:-}
       - WEB_CONCURRENCY=${WEB_CONCURRENCY:-1}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
     volumes:
       - vectordb_data:/data
+      # Кеш моделей Hugging Face сохраняется в /app/.cache/huggingface внутри контейнера
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
       interval: 30s
